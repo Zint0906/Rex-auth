@@ -56,7 +56,7 @@ def init_db():
     ''')
     
     # 기본 관리자 계정 (admin / admin123)
-    admin_pw = hashlib.sha256("admin123".encode()).hexdigest()
+    admin_pw = hashlib.sha256("!!kkrtt1234".encode()).hexdigest()
     try:
         c.execute('INSERT INTO users (username, password) VALUES (?, ?)', ('admin', admin_pw))
     except:
