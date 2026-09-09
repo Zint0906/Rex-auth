@@ -23,7 +23,6 @@ def init_db():
     conn = sqlite3.connect(DB_FILE)
     c = conn.cursor()
     
-    # 관리자 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS users (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -32,7 +31,6 @@ def init_db():
         )
     ''')
     
-    # 라이선스 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS licenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +42,6 @@ def init_db():
         )
     ''')
     
-    # 로그 테이블
     c.execute('''
         CREATE TABLE IF NOT EXISTS logs (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -55,8 +52,7 @@ def init_db():
         )
     ''')
     
-    # 기본 관리자 계정 (admin / admin123)
-    admin_pw = hashlib.sha256("!!kkrtt1234".encode()).hexdigest()
+    admin_pw = hashlib.sha256("admin123".encode()).hexdigest()
     try:
         c.execute('INSERT INTO users (username, password) VALUES (?, ?)', ('admin', admin_pw))
     except:
@@ -82,7 +78,7 @@ def log_action(hwid, action, ip):
 
 
 # ============================================================
-# 인증 API (RexClient가 호출)
+# 인증 API
 # ============================================================
 
 @app.route('/')
@@ -115,24 +111,23 @@ def verify():
         
         if not license_data:
             log_action(hwid, 'unregistered_attempt', ip)
-            return jsonify({'success': False, 'message': '등록되지 않은 HWID입니다. 판매자에게 문의하세요.'})
+            return jsonify({'success': False, 'message': '등록되지 않은 HWID입니다.'})
         
         status = license_data['status']
         
         if status == 'pending':
             log_action(hwid, 'pending_attempt', ip)
-            return jsonify({'success': False, 'message': '승인 대기 중입니다. 관리자가 승인하면 사용 가능합니다.'})
+            return jsonify({'success': False, 'message': '승인 대기 중입니다.'})
         
         elif status == 'revoked':
             log_action(hwid, 'revoked_attempt', ip)
-            return jsonify({'success': False, 'message': '이 라이선스는 차단되었습니다.'})
+            return jsonify({'success': False, 'message': '차단된 라이선스입니다.'})
         
         elif status == 'expired':
             log_action(hwid, 'expired_attempt', ip)
-            return jsonify({'success': False, 'message': '라이선스가 만료되었습니다. 갱신이 필요합니다.'})
+            return jsonify({'success': False, 'message': '만료된 라이선스입니다.'})
         
         elif status == 'approved':
-            # 만료일 확인
             expiry = license_data['expiry_date']
             if expiry:
                 expiry_date = datetime.strptime(expiry, '%Y-%m-%d')
@@ -146,7 +141,7 @@ def verify():
                     return jsonify({'success': False, 'message': '라이선스가 만료되었습니다.'})
             
             log_action(hwid, 'verified', ip)
-            return jsonify({'success': True, 'message': '인증 성공! Rex Client를 사용할 수 있습니다.'})
+            return jsonify({'success': True, 'message': '인증 성공!'})
         
         else:
             return jsonify({'success': False, 'message': '알 수 없는 상태입니다.'})
@@ -156,7 +151,7 @@ def verify():
 
 
 # ============================================================
-# 관리자 페이지 (HTML 직접 반환)
+# HTML 템플릿 (수정됨 - {error} 사용)
 # ============================================================
 
 HTML_LOGIN = '''
@@ -242,7 +237,7 @@ body {
 <div class="login-box">
     <h1>🦖 REX</h1>
     <div class="subtitle">Administrator Login</div>
-    %s
+    {error}
     <form method="POST">
         <input type="text" name="username" placeholder="Username" required>
         <input type="password" name="password" placeholder="Password" required>
@@ -404,34 +399,34 @@ td {
     <div class="header">
         <h1>🦖 REX Admin</h1>
         <div>
-            <span class="user">%s</span>
+            <span class="user">{user}</span>
             <a href="/logout" class="logout">로그아웃</a>
         </div>
     </div>
 
     <div class="stats">
         <div class="stat-card blue">
-            <div class="number">%d</div>
+            <div class="number">{total}</div>
             <div class="label">전체</div>
         </div>
         <div class="stat-card green">
-            <div class="number">%d</div>
+            <div class="number">{approved}</div>
             <div class="label">승인됨</div>
         </div>
         <div class="stat-card yellow">
-            <div class="number">%d</div>
+            <div class="number">{pending}</div>
             <div class="label">대기중</div>
         </div>
         <div class="stat-card red">
-            <div class="number">%d</div>
+            <div class="number">{revoked}</div>
             <div class="label">차단됨</div>
         </div>
     </div>
 
     <form class="add-form" method="POST" action="/admin/add">
-        <input type="text" name="hwid" placeholder="HWID 입력 (예: A3F8D9E1...)" required>
+        <input type="text" name="hwid" placeholder="HWID 입력" required>
         <input type="number" name="days" value="365" style="flex:0.3; min-width:80px;">
-        <input type="text" name="note" placeholder="비고 (선택)" style="flex:0.5; min-width:150px;">
+        <input type="text" name="note" placeholder="비고" style="flex:0.5; min-width:150px;">
         <button type="submit">➕ 등록</button>
     </form>
 
@@ -448,14 +443,14 @@ td {
                 </tr>
             </thead>
             <tbody>
-                %s
+                {table_rows}
             </tbody>
         </table>
     </div>
 
     <div class="logs">
         <h3 style="color:#888; margin-bottom:10px;">📋 최근 로그</h3>
-        %s
+        {log_html}
     </div>
 
 </div>
@@ -485,9 +480,9 @@ def login():
             session['username'] = username
             return redirect('/admin')
         
-        return HTML_LOGIN % '<div class="error">❌ 아이디 또는 비밀번호가 틀렸습니다.</div>'
+        return HTML_LOGIN.replace('{error}', '<div class="error">❌ 아이디 또는 비밀번호가 틀렸습니다.</div>')
     
-    return HTML_LOGIN % ''
+    return HTML_LOGIN.replace('{error}', '')
 
 
 @app.route('/logout')
@@ -512,13 +507,11 @@ def admin():
     c.execute('SELECT * FROM licenses ORDER BY id DESC LIMIT 100')
     licenses = c.fetchall()
     
-    # 로그 가져오기
     c.execute('SELECT * FROM logs ORDER BY id DESC LIMIT 20')
     logs = c.fetchall()
     
     conn.close()
     
-    # 테이블 행 생성
     table_rows = ''
     for r in licenses:
         status = r['status']
@@ -544,7 +537,6 @@ def admin():
         </tr>
         '''
     
-    # 로그 HTML
     log_html = ''
     for log in logs:
         log_html += f'''
@@ -556,7 +548,7 @@ def admin():
         </div>
         '''
     
-    return HTML_ADMIN % (session.get('username'), total, approved, pending, revoked, table_rows, log_html)
+    return HTML_ADMIN.replace('{user}', session.get('username', 'admin')).replace('{total}', str(total)).replace('{approved}', str(approved)).replace('{pending}', str(pending)).replace('{revoked}', str(revoked)).replace('{table_rows}', table_rows).replace('{log_html}', log_html)
 
 
 @app.route('/admin/add', methods=['POST'])
@@ -577,10 +569,7 @@ def add_license():
     c = conn.cursor()
     
     try:
-        c.execute('''
-            INSERT INTO licenses (hwid, status, expiry_date, note)
-            VALUES (?, 'pending', ?, ?)
-        ''', (hwid, expiry, note))
+        c.execute('INSERT INTO licenses (hwid, status, expiry_date, note) VALUES (?, "pending", ?, ?)', (hwid, expiry, note))
         conn.commit()
         conn.close()
         return redirect('/admin')
